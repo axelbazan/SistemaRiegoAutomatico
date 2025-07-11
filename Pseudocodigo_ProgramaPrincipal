@@ -1,0 +1,100 @@
+//Definición de pines y librerías necesarias
+#include <DHT.h>
+#include <RTClib.h>
+
+// Pines
+#define SENSOR_HUMEDAD_PIN A0
+#define SENSOR_LLUVIA_PIN A1
+#define VALVULA_RIEGO_PIN 4
+#define BOMBA_PIN         5
+#define VALVULA_DESAGOTE_PIN 6
+#define DHT_PIN           7
+
+// Configuraciones
+#define DHTTYPE DHT22
+#define HORA_RIEGO 6  // 6 AM
+#define HUMEDAD_UMBRAL 40
+
+DHT dht(DHT_PIN, DHTTYPE);
+RTC_DS1307 rtc;
+
+bool yaSeRegóHoy = false;
+
+//Setup
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  rtc.begin();
+
+  pinMode(SENSOR_HUMEDAD_PIN, INPUT);
+  pinMode(SENSOR_LLUVIA_PIN, INPUT);
+
+  pinMode(VALVULA_RIEGO_PIN, OUTPUT);
+  pinMode(BOMBA_PIN, OUTPUT);
+  pinMode(VALVULA_DESAGOTE_PIN, OUTPUT);
+
+  digitalWrite(VALVULA_RIEGO_PIN, LOW);
+  digitalWrite(BOMBA_PIN, LOW);
+  digitalWrite(VALVULA_DESAGOTE_PIN, LOW);
+}
+
+//Loop principal
+void loop() {
+  DateTime now = rtc.now();
+  
+  if (now.hour() == HORA_RIEGO && !yaSeRegóHoy) {
+    if (condicionesAdecuadas()) {
+      ejecutarRiego();
+      delay(30 * 60 * 1000);  // Esperar 30 minutos
+      ejecutarDesagote();
+    } else {
+      Serial.println("Condiciones no adecuadas. No se riega hoy.");
+    }
+    yaSeRegóHoy = true;
+  }
+
+  if (now.hour() != HORA_RIEGO) {
+    yaSeRegóHoy = false;  // Reset para el siguiente día
+  }
+
+  delay(10 * 1000);  // Esperar 10 segundos antes de verificar de nuevo
+}
+
+//Funciones de control
+bool condicionesAdecuadas() {
+  int humedadSuelo = analogRead(SENSOR_HUMEDAD_PIN);
+  float humedadPercent = map(humedadSuelo, 1023, 0, 0, 100);  // calibrar según tu sensor
+
+  float temperatura = dht.readTemperature();
+  int lluvia = analogRead(SENSOR_LLUVIA_PIN);  // valor bajo indica presencia de agua
+
+  Serial.print("Humedad: "); Serial.print(humedadPercent); Serial.println("%");
+  Serial.print("Temperatura: "); Serial.print(temperatura); Serial.println("°C");
+  Serial.print("Sensor lluvia: "); Serial.println(lluvia);
+
+  return humedadPercent < HUMEDAD_UMBRAL && temperatura > 10 && lluvia > 600;
+}
+
+void ejecutarRiego() {
+  Serial.println("Iniciando riego...");
+
+  digitalWrite(VALVULA_RIEGO_PIN, HIGH);
+  digitalWrite(BOMBA_PIN, HIGH);
+
+  delay(5 * 60 * 1000);  // simula riego por 5 minutos
+
+  digitalWrite(BOMBA_PIN, LOW);
+  digitalWrite(VALVULA_RIEGO_PIN, LOW);
+
+  Serial.println("Riego finalizado.");
+}
+
+void ejecutarDesagote() {
+  Serial.println("Iniciando desagote...");
+
+  digitalWrite(VALVULA_DESAGOTE_PIN, HIGH);
+  delay(3 * 60 * 1000);  // 3 minutos de desagote
+  digitalWrite(VALVULA_DESAGOTE_PIN, LOW);
+
+  Serial.println("Desagote finalizado.");
+}
