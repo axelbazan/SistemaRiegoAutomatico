@@ -1,100 +1,106 @@
-//Definición de pines y librerías necesarias
-#include <DHT.h>
-#include <RTClib.h>
+SETUP:
+    inicializarSensores()
+    inicializarActuadores()
+    verificarEstadoEnergia()
 
-// Pines
-#define SENSOR_HUMEDAD_PIN A0
-#define SENSOR_LLUVIA_PIN A1
-#define VALVULA_RIEGO_PIN 4
-#define BOMBA_PIN         5
-#define VALVULA_DESAGOTE_PIN 6
-#define DHT_PIN           7
+LOOP DIARIO:
+    SI esHoraDeRiego() Y energiaSuficiente() ENTONCES
+        SI condicionesAdecuadas() ENTONCES
+            ejecutarRiego()
+            esperar(30 minutos)
+            ejecutarDesagote()
+        SINO
+            log("Condiciones no aptas para riego hoy")
+        FIN SI
+    FIN SI
+    esperar(1 hora)  // evitar loops constantes
+FIN LOOP
 
-// Configuraciones
-#define DHTTYPE DHT22
-#define HORA_RIEGO 6  // 6 AM
-#define HUMEDAD_UMBRAL 40
+// ----------------------- FUNCIONES -------------------------
 
-DHT dht(DHT_PIN, DHTTYPE);
-RTC_DS1307 rtc;
+FUNC esHoraDeRiego():
+    hora_actual = obtenerHora()
+    RETORNAR hora_actual ENTRE 06:00 Y 08:00
 
-bool yaSeRegóHoy = false;
+FUNC energiaSuficiente():
+    voltaje = leerVoltajeBateria()
+    RETORNAR voltaje >= 12.0
 
-//Setup
-void setup() {
-  Serial.begin(9600);
-  dht.begin();
-  rtc.begin();
+FUNC condicionesAdecuadas():
+    humedad = leerHumedadSuelo()
+    temperatura = leerTemperatura()
+    lluvia = leerSensorLluvia()
+    
+    SI humedad < 40% Y temperatura > 10°C Y NO lluvia
+        RETORNAR VERDADERO
+    SINO
+        RETORNAR FALSO
+    FIN SI
 
-  pinMode(SENSOR_HUMEDAD_PIN, INPUT);
-  pinMode(SENSOR_LLUVIA_PIN, INPUT);
+FUNC ejecutarRiego():
+    log("Iniciando riego")
+    abrirValvulaRiego()
+    prenderBomba()
+    esperarHastaPiletonLleno()
+    apagarBomba()
+    cerrarValvulaRiego()
+    log("Riego finalizado")
 
-  pinMode(VALVULA_RIEGO_PIN, OUTPUT);
-  pinMode(BOMBA_PIN, OUTPUT);
-  pinMode(VALVULA_DESAGOTE_PIN, OUTPUT);
+FUNC ejecutarDesagote():
+    log("Iniciando desagote")
+    abrirValvulaDesagote()
+    esperar(5 minutos)
+    cerrarValvulaDesagote()
+    log("Desagote finalizado")
 
-  digitalWrite(VALVULA_RIEGO_PIN, LOW);
-  digitalWrite(BOMBA_PIN, LOW);
-  digitalWrite(VALVULA_DESAGOTE_PIN, LOW);
-}
+FUNC esperarHastaPiletonLleno():
+    MIENTRAS nivelPileton() < 90%
+        esperar(10 segundos)
+    FIN MIENTRAS
 
-//Loop principal
-void loop() {
-  DateTime now = rtc.now();
-  
-  if (now.hour() == HORA_RIEGO && !yaSeRegóHoy) {
-    if (condicionesAdecuadas()) {
-      ejecutarRiego();
-      delay(30 * 60 * 1000);  // Esperar 30 minutos
-      ejecutarDesagote();
-    } else {
-      Serial.println("Condiciones no adecuadas. No se riega hoy.");
-    }
-    yaSeRegóHoy = true;
-  }
+// --------------------- FUNCIONES DE HARDWARE ----------------------
 
-  if (now.hour() != HORA_RIEGO) {
-    yaSeRegóHoy = false;  // Reset para el siguiente día
-  }
+FUNC inicializarSensores():
+    // Configurar pines, iniciar comunicación I2C, etc.
 
-  delay(10 * 1000);  // Esperar 10 segundos antes de verificar de nuevo
-}
+FUNC inicializarActuadores():
+    // Setear pines como salida, inicializar reles
 
-//Funciones de control
-bool condicionesAdecuadas() {
-  int humedadSuelo = analogRead(SENSOR_HUMEDAD_PIN);
-  float humedadPercent = map(humedadSuelo, 1023, 0, 0, 100);  // calibrar según tu sensor
+FUNC leerHumedadSuelo():
+    // Leer valor analógico de sensor
 
-  float temperatura = dht.readTemperature();
-  int lluvia = analogRead(SENSOR_LLUVIA_PIN);  // valor bajo indica presencia de agua
+FUNC leerTemperatura():
+    // Sensor DHT o similar
 
-  Serial.print("Humedad: "); Serial.print(humedadPercent); Serial.println("%");
-  Serial.print("Temperatura: "); Serial.print(temperatura); Serial.println("°C");
-  Serial.print("Sensor lluvia: "); Serial.println(lluvia);
+FUNC leerSensorLluvia():
+    // Digital/analógico o API climática
 
-  return humedadPercent < HUMEDAD_UMBRAL && temperatura > 10 && lluvia > 600;
-}
+FUNC leerVoltajeBateria():
+    // Usar divisor resistivo + ADC
 
-void ejecutarRiego() {
-  Serial.println("Iniciando riego...");
+FUNC nivelPileton():
+    // Leer sensor flotante o ultrasónico
 
-  digitalWrite(VALVULA_RIEGO_PIN, HIGH);
-  digitalWrite(BOMBA_PIN, HIGH);
+FUNC abrirValvulaRiego():
+    // Activar relé
 
-  delay(5 * 60 * 1000);  // simula riego por 5 minutos
+FUNC cerrarValvulaRiego():
+    // Desactivar relé
 
-  digitalWrite(BOMBA_PIN, LOW);
-  digitalWrite(VALVULA_RIEGO_PIN, LOW);
+FUNC prenderBomba():
+    // Activar bomba
 
-  Serial.println("Riego finalizado.");
-}
+FUNC apagarBomba():
+    // Desactivar bomba
 
-void ejecutarDesagote() {
-  Serial.println("Iniciando desagote...");
+FUNC abrirValvulaDesagote():
+    // Activar relé
 
-  digitalWrite(VALVULA_DESAGOTE_PIN, HIGH);
-  delay(3 * 60 * 1000);  // 3 minutos de desagote
-  digitalWrite(VALVULA_DESAGOTE_PIN, LOW);
+FUNC cerrarValvulaDesagote():
+    // Desactivar relé
 
-  Serial.println("Desagote finalizado.");
-}
+FUNC obtenerHora():
+    // RTC o módulo de tiempo via NTP
+
+FUNC log(mensaje):
+    // Mostrar en LCD o guardar en SD/EEPROM
