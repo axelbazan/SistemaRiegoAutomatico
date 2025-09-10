@@ -1,0 +1,115 @@
+#include <Arduino.h>
+#include <Ds1302.h>
+
+#define PIN_ENA 3
+#define PIN_CLK 4
+#define PIN_DAT 2
+  const int amVerano = 6;
+  const int pmVerano = 21;
+  const int horaInvierno = 18;
+
+
+Ds1302 rtc(PIN_ENA, PIN_CLK, PIN_DAT);
+
+
+const static char* WeekDays[] =
+{
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday"
+};
+
+
+void setup()
+{
+    Serial.begin(9600);
+
+    // initialize the RTC
+    rtc.init();
+
+    // test if clock is halted and set a date-time (see example 2) to start it
+    
+    if (rtc.isHalted())
+    {
+        Serial.println("RTC is halted. Setting time...");
+
+        Ds1302::DateTime dt = {
+            .year = 25,
+            .month = Ds1302::MONTH_SEP,
+            .day = 10,
+            .hour = 17,
+            .minute = 10,
+            .second = 30,
+            .dow = Ds1302::DOW_WED
+        };
+
+        rtc.setDateTime(&dt);
+    }
+}
+
+
+
+void loop() {
+  // get the current time
+    Ds1302::DateTime now;
+    rtc.getDateTime(&now);
+
+    static uint8_t last_second = 0;
+    if (last_second != now.second)
+    {
+        last_second = now.second;
+
+        Serial.print("20");
+        Serial.print(now.year);    // 00-99
+        Serial.print('-');
+        if (now.month < 10) Serial.print('0');
+        Serial.print(now.month);   // 01-12
+        Serial.print('-');
+        if (now.day < 10) Serial.print('0');
+        Serial.print(now.day);     // 01-31
+        Serial.print(' ');
+        Serial.print(WeekDays[now.dow - 1]); // 1-7
+        Serial.print(' ');
+        if (now.hour < 10) Serial.print('0');
+        Serial.print(now.hour);    // 00-23
+        Serial.print(':');
+        if (now.minute < 10) Serial.print('0');
+        Serial.print(now.minute);  // 00-59
+        Serial.print(':');
+        if (now.second < 10) Serial.print('0');
+        Serial.print(now.second);  // 00-59
+        Serial.println();
+          bool esHora = esHoraDeRiego();
+    }
+    delay(100);
+}
+
+bool esHoraDeRiego(){
+
+  Ds1302::DateTime now;
+  rtc.getDateTime(&now);
+  int mesActual=now.month;
+  int horaActual = now.hour;
+  bool horaAdecuada = false;
+
+ if ((mesActual <= 4) || (mesActual>=10)){ //Verano
+  if ((horaActual == amVerano) || (horaActual == pmVerano)){
+    horaAdecuada = true;
+    Serial.print("Es hora de regar!");
+  } }
+else { //Invierno
+  if (horaActual == horaInvierno){ 
+    horaAdecuada = true;
+    Serial.print("Es hora de regar!");
+ }else {
+    Serial.print("NO es hora de regar!");
+ }
+ }
+
+  return horaAdecuada;
+}
+
