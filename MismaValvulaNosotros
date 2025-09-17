@@ -1,0 +1,162 @@
+#include <Arduino.h>
+#include <Ds1302.h>
+
+#define PIN_ENA 3
+#define PIN_CLK 4
+#define PIN_DAT 2
+#define TRIG 8
+#define ECHO 10
+  const int horaVerano = 07;
+  const int horaInvierno = 14;
+  const int profundidadBancal = 5;
+  const int distanciaDesagote = 10;
+  long duracion;
+  int distancia;
+
+
+Ds1302 rtc(PIN_ENA, PIN_CLK, PIN_DAT);
+
+
+const static char* WeekDays[] =
+{
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday"
+};
+
+
+void setup()
+{
+  pinMode(9, OUTPUT);
+  Serial.begin(9600);
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+
+    // initialize the RTC
+    rtc.init();
+
+    // test if clock is halted and set a date-time (see example 2) to start it
+    
+    if (rtc.isHalted())
+    {
+        Serial.println("RTC is halted. Setting time...");
+
+        Ds1302::DateTime dt = {
+            .year = 25,
+            .month = Ds1302::MONTH_SEP,
+            .day = 17,
+            .hour = 14,
+            .minute = 40,
+            .second = 30,
+            .dow = Ds1302::DOW_WED
+        };
+
+        rtc.setDateTime(&dt);
+    }
+}
+
+
+
+void loop() {
+  diaYHora();
+  if (esHoraDeRiego()){
+    if (distanciaAgua() > profundidadBancal){
+      digitalWrite(9,LOW);
+    } else{
+        digitalWrite(9,HIGH);
+        delay(15000);
+        Serial.println("COMINEZA DESAGOTE");
+        if (distanciaAgua() < distanciaDesagote){
+          //salida de agua de bancal con otra valvula AHORA USAMOS LA MISMA
+          digitalWrite(9,LOW);
+        }
+        }
+  } else
+    digitalWrite(9,HIGH);
+  delay(3000);
+}
+
+
+bool esHoraDeRiego(){
+
+  Ds1302::DateTime now;
+  rtc.getDateTime(&now);
+  int mesActual=now.month;
+  int horaActual = now.hour;
+  bool horaAdecuada = false;
+
+ if ((mesActual <= 4) || (mesActual>=10)){ //Verano
+  if ((horaActual == horaVerano)){
+    horaAdecuada = true;
+    Serial.println("Es hora de regar!");
+  } }
+else { //Invierno
+  if (horaActual == horaInvierno){ 
+    horaAdecuada = true;
+    Serial.println("Es hora de regar!");
+ }else {
+    Serial.println("NO es hora de regar!");
+ }
+ }
+
+  return horaAdecuada;
+}
+
+int distanciaAgua(){
+  // Generar pulso de 10us en TRIG
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+
+  // Medir el tiempo en microsegundos
+  duracion = pulseIn(ECHO, HIGH);
+
+  // Calcular la distancia (velocidad del sonido ~340 m/s)
+  distancia = duracion * 0.034 / 2;
+
+  Serial.print("Distancia: ");
+  Serial.print(distancia);
+  Serial.println(" cm");
+  return (distancia);
+
+}
+
+void diaYHora(){
+  
+  // get the current time
+    Ds1302::DateTime now;
+    rtc.getDateTime(&now);
+
+    static uint8_t last_second = 0;
+  if (last_second != now.second)
+    {
+        last_second = now.second;
+
+        Serial.print("20");
+        Serial.print(now.year);    // 00-99
+        Serial.print('-');
+        if (now.month < 10) Serial.print('0');
+        Serial.print(now.month);   // 01-12
+        Serial.print('-');
+        if (now.day < 10) Serial.print('0');
+        Serial.print(now.day);     // 01-31
+        Serial.print(' ');
+        Serial.print(WeekDays[now.dow - 1]); // 1-7
+        Serial.print(' ');
+        if (now.hour < 10) Serial.print('0');
+        Serial.print(now.hour);    // 00-23
+        Serial.print(':');
+        if (now.minute < 10) Serial.print('0');
+        Serial.print(now.minute);  // 00-59
+        Serial.print(':');
+        if (now.second < 10) Serial.print('0');
+        Serial.print(now.second);  // 00-59
+        Serial.println();
+}
+}
