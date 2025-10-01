@@ -1,0 +1,178 @@
+#include <Arduino.h>
+#include <Ds1302.h>
+
+#define PIN_ENA 3
+#define PIN_CLK 4
+#define PIN_DAT 2
+#define TRIG 8
+#define ECHO 10
+
+// Nico
+#define ValvulaLlenado 9
+#define ValvulaVaciado 9
+
+const int horaVerano = 7;
+const int horaInvierno = 14;
+
+const float profundidadRecipiente = 11; // cm
+const float alturaAguaMenor = 1;       // nivel bajo deseado
+const float alturaAguaMayor = 6;       // nivel alto deseado
+
+const int tiempoDeRemojo = 1 * 60;       // 1 minuto en segundos
+const int tiempoEntreLlenados = 2 * 60;  // 2 minutos en segundos
+
+long duracion;
+float distancia;
+
+bool llenadoHecho = false;
+bool vaciadoHecho = false;
+
+long llenadoTimeStamp = 0;
+long tiempoDesdeLlenado = 0;
+
+Ds1302 rtc(PIN_ENA, PIN_CLK, PIN_DAT);
+
+const static char* WeekDays[] =
+{
+  "Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"
+};
+
+// --- FUNCIONES AUXILIARES ---
+
+// timestamp en segundos
+long timeStampEnSegundos() {
+  Ds1302::DateTime now;
+  rtc.getDateTime(&now);
+  return now.hour * 3600L + now.minute * 60L + now.second;
+}
+
+bool esHoraDeRiego() {
+  Ds1302::DateTime now;
+  rtc.getDateTime(&now);
+  int mesActual = now.month;
+  int horaActual = now.hour;
+  bool horaAdecuada = false;
+
+  if ((mesActual <= 4) || (mesActual >= 10)) { // Verano
+    if (horaActual == horaVerano) horaAdecuada = true;
+  } else { // Invierno
+    if (horaActual == horaInvierno) horaAdecuada = true;
+  }
+
+  return horaAdecuada;
+}
+
+float distanciaAgua() {
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+
+  duracion = pulseIn(ECHO, HIGH);
+  distancia = duracion * 0.034 / 2;
+  return distancia;
+}
+
+float alturaAgua() {
+  return profundidadRecipiente - distanciaAgua();
+}
+
+// --- SETUP ---
+void setup() {
+  pinMode(ValvulaLlenado, OUTPUT);
+  pinMode(ValvulaVaciado, OUTPUT);
+  Serial.begin(9600);
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+
+  digitalWrite(ValvulaLlenado, HIGH);
+  digitalWrite(ValvulaVaciado, HIGH);
+
+  rtc.init();
+
+  if (rtc.isHalted()) {
+    Ds1302::DateTime dt = {
+      .year = 25,
+      .month = Ds1302::MONTH_SEP,
+      .day = 17,
+      .hour = 14,
+      .minute = 40,
+      .second = 30,
+      .dow = Ds1302::DOW_WED
+    };
+    rtc.setDateTime(&dt);
+  }
+}
+
+// --- LOOP ---
+void loop() {
+  if (esHoraDeRiego()) {
+    float alturaActual = alturaAgua();
+    Serial.print("Nivel actual: ");
+    Serial.println(alturaActual);
+
+    if (!llenadoHecho) {
+      Serial.println("Chequeando llenado...");
+
+      // --- CASO NORMAL: llenar si está bajo ---
+      if (alturaActual < alturaAguaMayor) {
+        Serial.println("Altura menor, llenando...");
+        digitalWrite(ValvulaLlenado, LOW);
+        //llenadoTimeStamp = timeStampEnSegundos();
+        while (alturaActual < alturaAguaMayor) {
+          delay(1000);
+          alturaActual = alturaAgua();
+          Serial.print("Llenando... Nivel: ");
+          Serial.println(alturaActual);
+        }
+        digitalWrite(ValvulaLlenado, HIGH);
+        Serial.println("Llenado completo");
+        llenadoTimeStamp = timeStampEnSegundos();
+        llenadoHecho = true;
+      }
+      // --- CASO LLUVIA: el agua ya está alta ---
+      else
+       if (alturaActual >= alturaAguaMayor) {
+        Serial.println("Detectada lluvia / nivel alto → NO se llena");
+        llenadoTimeStamp = timeStampEnSegundos(); // tomo tiempo igual
+        llenadoHecho = true; // marco como hecho para pasar al remojo
+      }
+    }
+
+      // Ya se hizo llenado
+      if (!vaciadoHecho) {
+        tiempoDesdeLlenado = (timeStampEnSegundos() - llenadoTimeStamp);
+        while (tiempoDesdeLlenado < tiempoDeRemojo) {
+          delay(1000);
+          tiempoDesdeLlenado = timeStampEnSegundos() - llenadoTimeStamp;
+          Serial.print("Tiempo desde el llenado (s): ");
+          Serial.println(tiempoDesdeLlenado);
+        }
+
+        // Paso al vaciado
+        Serial.println("Tiempo de remojo cumplido. Vaciando...");
+        digitalWrite(ValvulaVaciado, LOW);
+        while (alturaActual > alturaAguaMenor) {
+          delay(1000);
+          alturaActual = alturaAgua();
+          Serial.print("Vaciando... Nivel: ");
+          Serial.println(alturaActual);
+        }
+        digitalWrite(ValvulaVaciado, HIGH);
+        vaciadoHecho = true;
+        Serial.println("Vaciado completo");
+      }
+
+  }
+  else {
+    // Reinicio estado cuando termina la franja de riego
+    if (llenadoHecho || vaciadoHecho) {
+      llenadoHecho = false;
+      vaciadoHecho = false;
+      Serial.println("Fuera de hora de riego → reseteo estado");
+    }
+  }
+
+  delay(3000);
+}
